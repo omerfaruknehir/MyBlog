@@ -98,7 +98,8 @@ jobs:
 
           root = Path("generated/KoiPond-ci-min")
           project = root / "project.yml"
-          raw_project = project.read_text().replace("    info:\\n      path: KoiPond/Info.plist\\n", "")
+          raw_project = project.read_text().replace("    info:\n      path: KoiPond/Info.plist\n", "")
+          assert "    info:" not in raw_project, raw_project
           lines = raw_project.splitlines()
           out = []
           inserted = False
