@@ -27,6 +27,62 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/generated"
           ditto -x -k /tmp/KoiPond-ci-min.zip "$GITHUB_WORKSPACE/generated"
 
+      - name: Patch verified compiler fixes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path("generated/KoiPond-ci-min/KoiPond")
+
+          math = root / "Math.swift"
+          s = math.read_text()
+          if "import SpriteKit" not in s:
+              s = s.replace("import CoreGraphics\n", "import CoreGraphics\nimport SpriteKit\n", 1)
+          if "func makeEllipsePhysicsBody" not in s:
+              s += """
+          
+          func makeEllipsePhysicsBody(size: CGSize, segments: Int = 16) -> SKPhysicsBody {
+              let count = max(8, segments)
+              let rx = size.width * 0.5
+              let ry = size.height * 0.5
+              let path = CGMutablePath()
+              for index in 0..<count {
+                  let angle = CGFloat(index) / CGFloat(count) * (.pi * 2)
+                  let point = CGPoint(x: cos(angle) * rx, y: sin(angle) * ry)
+                  if index == 0 { path.move(to: point) } else { path.addLine(to: point) }
+              }
+              path.closeSubpath()
+              return SKPhysicsBody(polygonFrom: path)
+          }
+          """
+          math.write_text(s)
+
+          fish = root / "FishNode.swift"
+          s = fish.read_text().replace(
+              "SKPhysicsBody(ellipseOf: CGSize(width: length * 0.84, height: height * 0.84))",
+              "makeEllipsePhysicsBody(size: CGSize(width: length * 0.84, height: height * 0.84))"
+          )
+          fish.write_text(s)
+
+          scene = root / "PondScene.swift"
+          s = scene.read_text()
+          s = s.replace(
+              "UIImpactFeedbackGenerator(style: strong ? .light : .soft).impactOccurred(intensity: strength)",
+              "UIImpactFeedbackGenerator(style: strength > 0.8 ? .light : .soft).impactOccurred(intensity: strength)"
+          )
+          s = s.replace(
+              "SKPhysicsBody(ellipseOf: CGSize(width: radius * 2.0, height: radius * 1.45))",
+              "makeEllipsePhysicsBody(size: CGSize(width: radius * 2.0, height: radius * 1.45), segments: 20)"
+          )
+          scene.write_text(s)
+
+          combined = "\n".join(p.read_text() for p in root.glob("*.swift"))
+          assert "SKPhysicsBody(ellipseOf:" not in combined
+          assert "UIImpactFeedbackGenerator(style: strong ?" not in combined
+          assert "func makeEllipsePhysicsBody" in combined
+          print("compiler-fix assertions: PASS")
+          PY
+
       - name: Install XcodeGen
         run: brew install xcodegen
 
